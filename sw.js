@@ -1,5 +1,5 @@
 /* Caches the app so it opens with no connection. Bump VERSION when the app changes. */
-var VERSION = 'focus-tracker-v1';
+var VERSION = 'focus-tracker-v2';
 var FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', function (event) {
