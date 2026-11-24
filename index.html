@@ -88,6 +88,7 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 .cardhead p { margin: 2px 0 0; color: var(--muted); font-size: 0.875rem; }
 .check { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--line); flex: none; display: grid; place-items: center; color: var(--accent-ink); font-size: 0.9rem; }
 .card.done .check { background: var(--accent); border-color: var(--accent); }
+.sub { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 2px 0 -4px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
   font: inherit; font-size: 0.9375rem; color: var(--ink); background: var(--bg);
@@ -95,10 +96,16 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 }
 .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .chip.extra { border-style: dashed; }
+.scorerow { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.score {
+  font: inherit; font-size: 1rem; color: var(--ink); background: var(--bg);
+  border: 1.5px solid var(--line); border-radius: 12px; min-height: 48px; cursor: pointer; text-align: center;
+}
+.score[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
 .progressline { color: var(--muted); font-size: 0.8125rem; }
-textarea, input[type="number"] {
+textarea, input[type="number"], input[type="time"] {
   font: inherit; width: 100%; color: var(--ink); background: var(--bg);
-  border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px;
+  border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 48px;
 }
 textarea { min-height: 84px; resize: vertical; }
 label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875rem; color: var(--muted); }
@@ -120,6 +127,7 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
 .wkdot.missed { background: var(--warn); border-color: var(--warn); }
 .toggles { display: flex; flex-wrap: wrap; gap: 8px; }
 .note { color: var(--muted); font-size: 0.875rem; margin: 0; }
+.stat { color: var(--ink); font-size: 0.875rem; margin: 0; }
 .rowline { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 .tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--surface); border-top: 1px solid var(--line);
@@ -152,33 +160,18 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
   var START = '2026-11-23';
   var EXAM_WEEK = '2026-12-07';
   var BACKUP_NAG_DAYS = 3;
+  var MAINT_TARGET = 6;
   var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   var DAYS_SHORT = ['M','T','W','T','F','S','S'];
-
-  var INDS = [
-    { id: 'move', title: 'Push-ups and squats', target: 3, exam: 2,
-      line: 'Both done on at least 3 days a week',
-      chips: [['push', 'Push-ups'], ['squat', 'Squats']], need: ['push', 'squat'] },
-    { id: 'skin', title: 'Skin routine', target: 6, exam: 5,
-      line: 'Morning and night, on 6 of 7 days',
-      chips: [['skinAm', 'Morning'], ['skinPm', 'Night']], need: ['skinAm', 'skinPm'] },
-    { id: 'sleep', title: 'Steady sleep', target: 5, exam: 5,
-      line: 'In bed by 10 pm and up within 30 minutes of 6 am, on 5 of 7 nights',
-      chips: [['sleepBed', 'Last night: in bed by 10 pm'], ['sleepWake', 'This morning: up within 30 min of 6 am']], need: ['sleepBed', 'sleepWake'] },
-    { id: 'brush', title: 'Brushing', target: 6, exam: 5,
-      line: 'Morning and night, on 6 of 7 days',
-      chips: [['brushAm', 'Morning'], ['brushPm', 'Night'], ['scraper', 'Tongue scraper (extra)']], need: ['brushAm', 'brushPm'] },
-    { id: 'tongue', title: 'Tongue posture', target: 5, exam: 4,
-      line: 'Kept it up most of the day, on 5 of 7 days',
-      chips: [['tongue', 'Kept it up most of the day']], need: ['tongue'] }
-  ];
+  var DEFAULTS = { pushT: 20, squatT: 20, bed: '22:00', wake: '06:00', tongueT: 7, waterT: 2 };
 
   /* Two copies of the data are kept under two keys, so a write that is cut short
-     (a dead battery, for example) can never wipe both. */
+     (a dead battery, for example) can never wipe both. The keys are unchanged from
+     earlier versions, so entries made before an update stay in place. */
   var KEY_A = 'focus-tracker-offline-a';
   var KEY_B = 'focus-tracker-offline-b';
-  var state = { days: {}, weeks: {}, months: {}, meta: {} };
+  var state = { days: {}, weeks: {}, months: {}, settings: {}, meta: {} };
   var view = 'today';
   var selDate = todayStr();
   var selWeek = weekStart(todayStr());
@@ -190,7 +183,7 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
   var lastSaved = 0;
   var storageOk = true;
 
-  /* ---------- dates ---------- */
+  /* ---------- dates and numbers ---------- */
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
   function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function parse(s) { var p = s.split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]); }
@@ -205,6 +198,58 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
     return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
   function daysBetween(a, b) { return Math.round((b - a) / 86400000); }
+  function num(v) { if (v === null || v === undefined || v === '') return null; var n = Number(v); return isNaN(n) ? null : n; }
+  function avg(list) { if (!list.length) return null; var s = 0; for (var i = 0; i < list.length; i++) s += list[i]; return s / list.length; }
+  function round1(n) { return Math.round(n * 10) / 10; }
+  function dayWord(n) { return n + (n === 1 ? ' day' : ' days'); }
+
+  /* ---------- times ---------- */
+  function toMin(t) {
+    if (!t || typeof t !== 'string' || t.indexOf(':') < 0) return null;
+    var p = t.split(':');
+    var h = Number(p[0]), m = Number(p[1]);
+    if (isNaN(h) || isNaN(m)) return null;
+    return h * 60 + m;
+  }
+  /* After midnight counts as later than the evening before: 12:30 am is 24:30. */
+  function bedMin(t) {
+    var m = toMin(t);
+    if (m === null) return null;
+    return m < 720 ? m + 1440 : m;
+  }
+  function clock(minutes) {
+    var m = ((Math.round(minutes) % 1440) + 1440) % 1440;
+    var h = Math.floor(m / 60), mm = m % 60;
+    var ap = h >= 12 ? 'pm' : 'am';
+    var h12 = h % 12 === 0 ? 12 : h % 12;
+    return h12 + ':' + pad(mm) + ' ' + ap;
+  }
+  function dur(min) {
+    var a = Math.abs(Math.round(min));
+    var h = Math.floor(a / 60), m = a % 60;
+    if (h === 0) return m + ' min';
+    return h + ' h ' + pad(m) + ' min';
+  }
+  function bedDiff(d) {
+    var b = bedMin(d && d.bedTime);
+    var t = bedMin(S().bed);
+    if (b === null || t === null) return null;
+    return b - t;
+  }
+  function wakeDiff(d) {
+    var w = toMin(d && d.wakeTime);
+    var t = toMin(S().wake);
+    if (w === null || t === null) return null;
+    return w - t;
+  }
+
+  /* ---------- settings ---------- */
+  function S() {
+    var o = {};
+    for (var k in DEFAULTS) { o[k] = (state.settings && state.settings[k] != null && state.settings[k] !== '') ? state.settings[k] : DEFAULTS[k]; }
+    o.pushT = Number(o.pushT); o.squatT = Number(o.squatT); o.tongueT = Number(o.tongueT); o.waterT = Number(o.waterT);
+    return o;
+  }
 
   /* ---------- storage ---------- */
   function readKey(k) {
@@ -227,11 +272,13 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
       state.days = best.days;
       state.weeks = best.weeks;
       state.months = best.months;
+      state.settings = best.settings || {};
       state.meta = best.meta || {};
     }
   }
   function saveLocal() {
     state.meta.saved = Date.now();
+    state.meta.schema = 3;
     var text = JSON.stringify(state);
     try {
       localStorage.setItem(KEY_A, text);
@@ -287,39 +334,165 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
   }
 
   /* ---------- writes ---------- */
-  function setField(kind, id, field, value, noRender) {
+  function setFields(kind, id, obj, noRender) {
     var cur = Object.assign({}, state[kind][id] || {});
-    cur[field] = value;
+    for (var k in obj) { cur[k] = obj[k]; }
     cur.updated = Date.now();
     state[kind][id] = cur;
     saveLocal();
     updateBanner();
     if (!noRender) render();
   }
+  function setField(kind, id, field, value, noRender) {
+    var o = {}; o[field] = value;
+    setFields(kind, id, o, noRender);
+  }
+  function setSetting(field, value) {
+    state.settings = Object.assign({}, state.settings);
+    state.settings[field] = value;
+    state.settings.updated = Date.now();
+    saveLocal();
+  }
 
-  /* ---------- logic ---------- */
-  function chipsDone(d, ind) {
+  /* ---------- habit rules ---------- */
+  /* Each rule reads the new fields first. An entry made before this version, with only
+     the old tick boxes, still counts as done, and is shown as "no details recorded". */
+  function hasAny(d, keys) { if (!d) return false; return keys.some(function (k) { var v = d[k]; return v !== undefined && v !== null && v !== '' && v !== false; }); }
+
+  var MOVE_KEYS = ['pushN', 'squatN'];
+  function moveNew(d) { return d && (num(d.pushN) !== null || num(d.squatN) !== null); }
+  function moveDone(d) {
     if (!d) return false;
-    return ind.need.every(function (k) { return !!d[k]; });
+    if (moveNew(d)) { var s = S(); return num(d.pushN) !== null && num(d.squatN) !== null && num(d.pushN) >= s.pushT && num(d.squatN) >= s.squatT; }
+    return !!(d.push && d.squat);
   }
-  function chipCount(d, ind) {
-    if (!d) return 0;
-    return ind.need.filter(function (k) { return !!d[k]; }).length;
+  function movePartial(d) { return !!d && !moveDone(d) && (moveNew(d) || !!d.push || !!d.squat); }
+
+  var AM_KEYS = ['amCleanser', 'amSerum', 'amMoist', 'amSun', 'amNoSun', 'amLip'];
+  var PM_KEYS = ['pmCleanser', 'pmAzelaic', 'pmMoist', 'pmLip'];
+  function amNew(d) { return hasAny(d, AM_KEYS); }
+  function pmNew(d) { return hasAny(d, PM_KEYS); }
+  function amDone(d) {
+    if (!d) return false;
+    if (amNew(d)) return !!(d.amCleanser && d.amMoist && (d.amSun || d.amNoSun) && d.amLip);
+    return !!d.skinAm;
   }
+  function pmDone(d) {
+    if (!d) return false;
+    if (pmNew(d)) return !!(d.pmCleanser && d.pmMoist && d.pmLip);
+    return !!d.skinPm;
+  }
+  function skinDone(d) { return amDone(d) && pmDone(d); }
+  function skinPartial(d) { return !!d && !skinDone(d) && (amNew(d) || pmNew(d) || !!d.skinAm || !!d.skinPm); }
+
+  function sleepNew(d) { return !!d && (!!d.bedTime || !!d.wakeTime); }
+  function sleepDone(d) {
+    if (!d) return false;
+    if (sleepNew(d)) {
+      var b = bedDiff(d), w = wakeDiff(d);
+      return b !== null && w !== null && b <= 0 && Math.abs(w) <= 30;
+    }
+    return !!(d.sleepBed && d.sleepWake);
+  }
+  function sleepPartial(d) { return !!d && !sleepDone(d) && (sleepNew(d) || !!d.sleepBed || !!d.sleepWake); }
+
+  function oralDone(d) { return !!d && !!d.brushAm && !!d.brushPm; }
+  function oralPartial(d) { return !!d && !oralDone(d) && (!!d.brushAm || !!d.brushPm || !!d.scraper || !!d.flosser); }
+
+  function tongueScore(d) { return d ? num(d.tongueScore) : null; }
+  function tongueDone(d) {
+    if (!d) return false;
+    var sc = tongueScore(d);
+    if (sc !== null) return sc >= S().tongueT;
+    return !!d.tongue;
+  }
+  function tonguePartial(d) { var sc = tongueScore(d); return !!d && !tongueDone(d) && sc !== null; }
+
+  /* ---------- weekly numbers ---------- */
+  function daysOf(ws) { return weekDates(ws).map(function (x) { return { date: x, d: state.days[x] }; }); }
+  function vals(ws, fn) {
+    var out = [];
+    daysOf(ws).forEach(function (x) { if (x.d) { var v = fn(x.d); if (v !== null && v !== undefined) out.push(v); } });
+    return out;
+  }
+
+  var INDS = [
+    { id: 'move', title: 'Push-ups and squats', target: 3, exam: 2, done: moveDone, partial: movePartial,
+      line: function () { var s = S(); return 'At least ' + s.pushT + ' push-ups and ' + s.squatT + ' squats, on 3 days a week'; },
+      stats: function (ws) {
+        var p = vals(ws, function (d) { return num(d.pushN); }), q = vals(ws, function (d) { return num(d.squatN); });
+        if (!p.length && !q.length) return [];
+        var out = [];
+        if (p.length) out.push('Push-ups: average ' + round1(avg(p)) + ', best day ' + Math.max.apply(null, p));
+        if (q.length) out.push('Squats: average ' + round1(avg(q)) + ', best day ' + Math.max.apply(null, q));
+        return out;
+      } },
+    { id: 'skin', title: 'Skin routine', target: 6, exam: 5, done: skinDone, partial: skinPartial,
+      line: function () { return 'Morning and night, all required products, on 6 of 7 days'; },
+      stats: function (ws) {
+        var a = daysOf(ws).filter(function (x) { return amDone(x.d); }).length;
+        var p = daysOf(ws).filter(function (x) { return pmDone(x.d); }).length;
+        var az = daysOf(ws).filter(function (x) { return x.d && x.d.pmAzelaic; }).length;
+        var out = ['Morning done ' + dayWord(a) + ', night done ' + dayWord(p)];
+        if (az) out.push('Azelaic acid used ' + az + (az === 1 ? ' night' : ' nights'));
+        return out;
+      } },
+    { id: 'sleep', title: 'Steady sleep', target: 5, exam: 5, done: sleepDone, partial: sleepPartial,
+      line: function () { var s = S(); return 'In bed by ' + clock(toMin(s.bed)) + ' and up within 30 minutes of ' + clock(toMin(s.wake)) + ', on 5 of 7 nights'; },
+      stats: function (ws) {
+        var b = vals(ws, function (d) { return bedMin(d.bedTime); });
+        var w = vals(ws, function (d) { return toMin(d.wakeTime); });
+        var diffs = vals(ws, function (d) { return bedDiff(d); });
+        var out = [];
+        if (b.length) {
+          var ad = avg(diffs);
+          out.push('Average bedtime ' + clock(avg(b)) + (ad > 0 ? ', ' + dur(ad) + ' later than target' : ad < 0 ? ', ' + dur(ad) + ' earlier than target' : ', on target'));
+        }
+        if (w.length) out.push('Average wake-up ' + clock(avg(w)));
+        return out;
+      } },
+    { id: 'oral', title: 'Oral care', target: 6, exam: 5, done: oralDone, partial: oralPartial,
+      line: function () { return 'Morning and night brushing, on 6 of 7 days'; },
+      stats: function (ws) {
+        var sc = daysOf(ws).filter(function (x) { return x.d && x.d.scraper; }).length;
+        var fl = daysOf(ws).filter(function (x) { return x.d && x.d.flosser; }).length;
+        return ['Tongue scraper ' + dayWord(sc) + ', water flosser ' + dayWord(fl)];
+      } },
+    { id: 'tongue', title: 'Tongue posture', target: 5, exam: 4, done: tongueDone, partial: tonguePartial,
+      line: function () { return 'Score ' + S().tongueT + ' or higher, on 5 of 7 days'; },
+      stats: function (ws) {
+        var v = vals(ws, function (d) { return tongueScore(d); });
+        return v.length ? ['Average score ' + round1(avg(v)) + ' out of 10'] : [];
+      } }
+  ];
+
+  var MAINT = [
+    { id: 'water', title: 'Water', done: function (d) { var w = d ? num(d.waterL) : null; return w !== null && w >= S().waterT; },
+      stats: function (ws) {
+        var v = vals(ws, function (d) { return num(d.waterL); });
+        return v.length ? 'Average ' + round1(avg(v)) + ' L on days logged' : '';
+      } },
+    { id: 'creatine', title: 'Creatine', done: function (d) { return !!(d && d.creatine); } },
+    { id: 'vitD', title: 'Vitamin D', done: function (d) { return !!(d && d.vitD); } },
+    { id: 'fishOil', title: 'Fish oil', done: function (d) { return !!(d && d.fishOil); } },
+    { id: 'magnesium', title: 'Magnesium', done: function (d) { return !!(d && d.magnesium); } }
+  ];
+
   function targetFor(ind, ws) { return ws === EXAM_WEEK ? ind.exam : ind.target; }
   function weekCount(ind, ws) {
-    return weekDates(ws).filter(function (d) { return chipsDone(state.days[d], ind); }).length;
+    return weekDates(ws).filter(function (x) { return ind.done(state.days[x]); }).length;
   }
-  function weekStatus(ind, ws) {
-    var t = targetFor(ind, ws), c = weekCount(ind, ws), today = todayStr();
+  function statusOf(c, t, ws) {
+    var today = todayStr();
     var dates = weekDates(ws);
-    var remaining = dates.filter(function (d) { return d >= today; }).length;
+    var remaining = dates.filter(function (x) { return x >= today; }).length;
     var ended = dates[6] < today;
     if (c >= t) return 'met';
     if (ended) return 'missed';
     if (c + remaining >= t) return 'ontrack';
     return 'behind';
   }
+  function weekStatus(ind, ws) { return statusOf(weekCount(ind, ws), targetFor(ind, ws), ws); }
   var STATUS_LABEL = { met: 'Met', ontrack: 'On track', behind: 'Out of reach', missed: 'Missed' };
 
   function completedWeeks() {
@@ -332,11 +505,34 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
     return list;
   }
 
+  /* ---------- building blocks ---------- */
+  function chipBtn(key, label, on, extra) {
+    return '<button class="chip' + (extra ? ' extra' : '') + '" aria-pressed="' + !!on + '" data-act="chip" data-k="' + key + '">' + esc(label) + '</button>';
+  }
+  function choiceBtn(key, val, label, cur) {
+    return '<button class="chip" aria-pressed="' + (cur === val) + '" data-act="choice" data-k="' + key + '" data-v="' + val + '">' + esc(label) + '</button>';
+  }
+  function numField(id, label, field, val, mode, step, kind, rid, ph) {
+    return '<label class="field" for="' + id + '">' + esc(label)
+      + '<input id="' + id + '" type="number" inputmode="' + mode + '" min="0" step="' + step + '" data-field="' + field + '" data-kind="' + kind + '" data-id="' + esc(rid) + '" data-type="num" placeholder="' + esc(ph || '') + '" value="' + esc(val == null ? '' : val) + '"></label>';
+  }
+  function timeField(id, label, field, val, rid) {
+    return '<label class="field" for="' + id + '">' + esc(label)
+      + '<input id="' + id + '" type="time" data-field="' + field + '" data-kind="days" data-id="' + esc(rid) + '" data-type="time" value="' + esc(val || '') + '"></label>';
+  }
+  function card(title, line, done, inner, foot) {
+    return '<section class="card' + (done ? ' done' : '') + '">'
+      + '<div class="cardhead"><div class="meta"><h2>' + esc(title) + '</h2><p>' + esc(line) + '</p></div>'
+      + '<span class="check" aria-hidden="true">' + (done ? '&#10003;' : '') + '</span></div>'
+      + inner + (foot ? '<div class="progressline">' + foot + '</div>' : '') + '</section>';
+  }
+
   /* ---------- views ---------- */
   function todayHTML() {
     var d = state.days[selDate] || {};
+    var s = S();
     var ws = weekStart(selDate);
-    var doneCount = INDS.filter(function (i) { return chipsDone(d, i); }).length;
+    var doneCount = INDS.filter(function (i) { return i.done(d); }).length;
     var isToday = selDate === todayStr();
     var html = '';
     html += '<div class="daynav">'
@@ -350,23 +546,84 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
     if (ws === EXAM_WEEK) html += '<div class="summary"><span class="tag warn">Exam week: reduced targets</span></div>';
     if (selDate < START) html += '<p class="note">This is before the plan starts on ' + esc(fmtShort(START)) + '. Entries still save.</p>';
     html += '<div class="stack">';
-    INDS.forEach(function (ind) {
-      var done = chipsDone(d, ind);
-      var c = weekCount(ind, ws), t = targetFor(ind, ws);
-      html += '<section class="card' + (done ? ' done' : '') + '">'
-        + '<div class="cardhead"><div class="meta"><h2>' + esc(ind.title) + '</h2><p>' + esc(ind.line) + '</p></div>'
-        + '<span class="check" aria-hidden="true">' + (done ? '&#10003;' : '') + '</span></div>'
-        + '<div class="chips">';
-      ind.chips.forEach(function (ch) {
-        var on = !!d[ch[0]];
-        var extra = ind.need.indexOf(ch[0]) === -1;
-        html += '<button class="chip' + (extra ? ' extra' : '') + '" aria-pressed="' + on + '" data-act="chip" data-k="' + ch[0] + '">' + esc(ch[1]) + '</button>';
-      });
-      html += '</div><div class="progressline">This week: ' + c + ' of ' + t + ' days</div></section>';
-    });
+
+    /* 1. push-ups and squats */
+    var legacyMove = !moveNew(d) && d.push && d.squat;
+    var moveInner = '<div class="row2">'
+      + numField('pushN', 'Push-ups today', 'pushN', d.pushN, 'numeric', '1', 'days', selDate, '0')
+      + numField('squatN', 'Squats today', 'squatN', d.squatN, 'numeric', '1', 'days', selDate, '0') + '</div>'
+      + (legacyMove ? '<p class="note">Earlier entry: done, numbers not recorded. Add your numbers to replace it.</p>' : '');
+    html += card('Push-ups and squats', 'Goal: at least ' + s.pushT + ' push-ups and ' + s.squatT + ' squats', moveDone(d), moveInner,
+      'This week: ' + weekCount(INDS[0], ws) + ' of ' + targetFor(INDS[0], ws) + ' days');
+
+    /* 2. skin */
+    var amLegacy = !amNew(d) && d.skinAm, pmLegacy = !pmNew(d) && d.skinPm;
+    var skinInner = '<div class="sub">Morning</div><div class="chips">'
+      + chipBtn('amCleanser', 'Cleanser', d.amCleanser)
+      + chipBtn('amSerum', 'Serum (optional)', d.amSerum, true)
+      + chipBtn('amMoist', 'Moisturizer', d.amMoist)
+      + chipBtn('amSun', 'Sunscreen', d.amSun)
+      + chipBtn('amNoSun', "Didn't go outside", d.amNoSun)
+      + chipBtn('amLip', 'Lip balm', d.amLip) + '</div>'
+      + (amLegacy ? '<p class="note">Morning: done earlier, products not recorded.</p>' : '')
+      + '<div class="sub">Night</div><div class="chips">'
+      + choiceBtn('pmCleanser', 'foam', 'Foaming cleanser', d.pmCleanser)
+      + choiceBtn('pmCleanser', 'bp', 'Benzoyl peroxide wash', d.pmCleanser)
+      + chipBtn('pmMoist', 'Moisturizer', d.pmMoist)
+      + chipBtn('pmAzelaic', 'Azelaic acid (optional)', d.pmAzelaic, true)
+      + chipBtn('pmLip', 'Lip balm', d.pmLip) + '</div>'
+      + (pmLegacy ? '<p class="note">Night: done earlier, products not recorded.</p>' : '');
+    html += card('Skin routine', 'All required products, morning and night', skinDone(d), skinInner,
+      'Morning ' + (amDone(d) ? 'done' : 'not done') + ', night ' + (pmDone(d) ? 'done' : 'not done') + '. This week: ' + weekCount(INDS[1], ws) + ' of ' + targetFor(INDS[1], ws) + ' days');
+
+    /* 3. sleep */
+    var bd = bedDiff(d), wd = wakeDiff(d);
+    var sleepNote = '';
+    if (bd !== null) sleepNote += 'Bedtime ' + clock(bedMin(d.bedTime)) + ': ' + (bd > 0 ? dur(bd) + ' after target' : bd < 0 ? dur(bd) + ' before target' : 'on target') + '. ';
+    if (wd !== null) sleepNote += 'Wake-up ' + clock(toMin(d.wakeTime)) + ': ' + (wd === 0 ? 'on target' : dur(wd) + (wd > 0 ? ' after' : ' before') + ' target') + '.';
+    var sleepLegacy = !sleepNew(d) && (d.sleepBed || d.sleepWake);
+    var sleepInner = '<div class="row2">'
+      + timeField('bedTime', 'Got into bed last night', 'bedTime', d.bedTime, selDate)
+      + timeField('wakeTime', 'Got up this morning', 'wakeTime', d.wakeTime, selDate) + '</div>'
+      + (sleepNote ? '<p class="stat">' + esc(sleepNote) + '</p>' : '')
+      + (sleepLegacy ? '<p class="note">Earlier entry: ' + (d.sleepBed && d.sleepWake ? 'on time' : 'partly on time') + ', times not recorded.</p>' : '');
+    html += card('Steady sleep', INDS[2].line(), sleepDone(d), sleepInner,
+      'This week: ' + weekCount(INDS[2], ws) + ' of ' + targetFor(INDS[2], ws) + ' nights');
+
+    /* 4. oral care */
+    var oralInner = '<div class="chips">'
+      + chipBtn('brushAm', 'Morning brush', d.brushAm)
+      + chipBtn('brushPm', 'Night brush', d.brushPm)
+      + chipBtn('scraper', 'Tongue scraper', d.scraper, true)
+      + chipBtn('flosser', 'Water flosser', d.flosser, true) + '</div>';
+    html += card('Oral care', 'Morning and night brushing. Scraper and flosser are counted weekly.', oralDone(d), oralInner,
+      'This week: ' + weekCount(INDS[3], ws) + ' of ' + targetFor(INDS[3], ws) + ' days');
+
+    /* 5. tongue posture */
+    var sc = tongueScore(d);
+    var scoreBtns = '';
+    for (var i = 0; i <= 10; i++) {
+      scoreBtns += '<button class="score" aria-pressed="' + (sc === i) + '" data-act="score" data-v="' + i + '" aria-label="Score ' + i + '">' + i + '</button>';
+    }
+    var tongueInner = '<div class="scorerow">' + scoreBtns + '</div>'
+      + '<p class="note">0 means you did not do it. 10 means you kept it up all day.</p>'
+      + (!tongueScore(d) && sc === null && d.tongue ? '<p class="note">Earlier entry: done, no score recorded.</p>' : '');
+    html += card('Tongue posture', 'Score ' + s.tongueT + ' or higher is a success day', tongueDone(d), tongueInner,
+      'This week: ' + weekCount(INDS[4], ws) + ' of ' + targetFor(INDS[4], ws) + ' days');
+
+    /* maintenance */
+    var mInner = numField('waterL', 'Water today (liters)', 'waterL', d.waterL, 'decimal', '0.25', 'days', selDate, 'for example 2.5')
+      + '<div class="chips">'
+      + chipBtn('creatine', 'Creatine', d.creatine)
+      + chipBtn('vitD', 'Vitamin D', d.vitD)
+      + chipBtn('fishOil', 'Fish oil', d.fishOil)
+      + chipBtn('magnesium', 'Magnesium', d.magnesium) + '</div>';
+    var mDone = MAINT.filter(function (m) { return m.done(d); }).length;
+    html += '<section class="card"><div class="cardhead"><div class="meta"><h2>Maintenance</h2><p>Already habits. Keep them going: ' + mDone + ' of 5 today.</p></div></div>' + mInner + '</section>';
+
     html += '</div>';
     html += '<section class="card" style="margin-top:12px"><label class="field" for="note">Note for the day (optional)'
-      + '<textarea id="note" data-field="note" data-kind="days" data-id="' + esc(selDate) + '" placeholder="Anything worth remembering">' + esc(d.note || '') + '</textarea></label></section>';
+      + '<textarea id="note" data-field="note" data-kind="days" data-id="' + esc(selDate) + '" data-type="text" placeholder="Anything worth remembering">' + esc(d.note || '') + '</textarea></label></section>';
     return html;
   }
 
@@ -378,6 +635,7 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
     var wk = state.weeks[ws] || {};
     var mk = monthKey(ws);
     var mo = state.months[mk] || {};
+    var s = S();
     var html = '';
     html += '<div class="daynav">'
       + '<button class="iconbtn" data-act="wk-prev" aria-label="Previous week">&#8592;</button>'
@@ -394,17 +652,37 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
         + '<span class="statuschip ' + st + '">' + STATUS_LABEL[st] + '</span></div><div class="weekdays">';
       dates.forEach(function (ds, i) {
         var dd = state.days[ds];
-        var full = chipsDone(dd, ind);
-        var part = !full && chipCount(dd, ind) > 0;
+        var full = ind.done(dd);
+        var part = !full && ind.partial(dd);
         var cls = 'daycell' + (full ? ' full' : '') + (part ? ' part' : '') + (ds > today ? ' future' : '') + (ds === today ? ' today' : '');
         html += '<button class="' + cls + '" data-act="goday" data-d="' + ds + '" aria-label="' + esc(weekdayName(ds) + ' ' + fmtShort(ds) + (full ? ', done' : part ? ', partly done' : ', not done')) + '">'
           + '<span class="bubble">' + (full ? '&#10003;' : part ? '&#183;' : '') + '</span><span>' + DAYS_SHORT[i] + '</span></button>';
       });
-      html += '</div></section>';
+      html += '</div>';
+      ind.stats(ws).forEach(function (line) { html += '<p class="stat">' + esc(line) + '</p>'; });
+      html += '</section>';
     });
     html += '</div>';
 
-    var weeks = completedWeeks().slice(-5);
+    /* maintenance */
+    var cw = completedWeeks();
+    var lastTwo = cw.slice(-2);
+    html += '<section class="card" style="margin-top:12px"><h2>Maintenance</h2><p class="note">Target: ' + MAINT_TARGET + ' of 7 days each. Two weeks in a row below target sends a habit back to focus.</p>';
+    MAINT.forEach(function (m) {
+      var c = weekDates(ws).filter(function (x) { return m.done(state.days[x]); }).length;
+      var st = statusOf(c, MAINT_TARGET, ws);
+      var back = lastTwo.length === 2 && lastTwo.every(function (w) {
+        return weekDates(w).filter(function (x) { return m.done(state.days[x]); }).length < MAINT_TARGET;
+      });
+      html += '<div class="rowline"><span>' + esc(m.title) + ' <span class="note">' + c + ' of 7</span></span><span class="wkdots">'
+        + (back ? '<span class="statuschip missed">Back to focus?</span>' : '')
+        + '<span class="statuschip ' + st + '">' + STATUS_LABEL[st] + '</span></span></div>';
+      if (m.stats) { var line = m.stats(ws); if (line) html += '<p class="stat">' + esc(line) + '</p>'; }
+    });
+    html += '</section>';
+
+    /* success rule */
+    var weeks = cw.slice(-5);
     html += '<section class="card" style="margin-top:12px"><h2>Moving on to maintenance</h2>'
       + '<p class="note">A habit is reached when its target is met in 4 of the last 5 weeks.</p>';
     if (weeks.length === 0) {
@@ -420,16 +698,24 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
     });
     html += '</section>';
 
-    html += '<section class="card" style="margin-top:12px"><h2>Sunday review</h2><div class="toggles">';
-    [['review', 'Review done'], ['water', 'Water, 2 L or more'], ['supps', 'Supplements taken']].forEach(function (x) {
-      html += '<button class="chip" aria-pressed="' + !!wk[x[0]] + '" data-act="wtoggle" data-k="' + x[0] + '">' + x[1] + '</button>';
-    });
-    html += '</div><label class="field" for="felt">How the week felt'
-      + '<textarea id="felt" data-field="felt" data-kind="weeks" data-id="' + esc(ws) + '" placeholder="One or two sentences">' + esc(wk.felt || '') + '</textarea></label></section>';
+    html += '<section class="card" style="margin-top:12px"><h2>Sunday review</h2><div class="toggles">'
+      + '<button class="chip" aria-pressed="' + !!wk.review + '" data-act="wtoggle" data-k="review">Review done</button></div>'
+      + '<label class="field" for="felt">How the week felt'
+      + '<textarea id="felt" data-field="felt" data-kind="weeks" data-id="' + esc(ws) + '" data-type="text" placeholder="One or two sentences">' + esc(wk.felt || '') + '</textarea></label></section>';
 
     html += '<section class="card" style="margin-top:12px"><h2>Savings, ' + esc(MONTHS[parse(ws).getMonth()]) + '</h2><div class="row2">'
-      + '<label class="field" for="saved">Saved ($)<input id="saved" type="number" inputmode="decimal" data-field="saved" data-kind="months" data-id="' + esc(mk) + '" value="' + esc(mo.saved || '') + '"></label>'
-      + '<label class="field" for="pct">Share of income (%)<input id="pct" type="number" inputmode="decimal" data-field="pct" data-kind="months" data-id="' + esc(mk) + '" value="' + esc(mo.pct || '') + '"></label>'
+      + numField('saved', 'Saved ($)', 'saved', mo.saved, 'decimal', 'any', 'months', mk, '')
+      + numField('pct', 'Share of income (%)', 'pct', mo.pct, 'decimal', 'any', 'months', mk, '')
+      + '</div></section>';
+
+    /* settings */
+    html += '<section class="card" style="margin-top:12px"><h2>Targets</h2><p class="note">Change these when a goal gets easy. Past entries are judged by the targets you have now.</p><div class="row2">'
+      + settingField('sPush', 'Push-ups per day', 'pushT', s.pushT, 'number', 'numeric')
+      + settingField('sSquat', 'Squats per day', 'squatT', s.squatT, 'number', 'numeric')
+      + settingField('sBed', 'Bedtime target', 'bed', s.bed, 'time')
+      + settingField('sWake', 'Wake-up target', 'wake', s.wake, 'time')
+      + settingField('sTongue', 'Tongue posture, success score', 'tongueT', s.tongueT, 'number', 'numeric')
+      + settingField('sWater', 'Water target (liters)', 'waterT', s.waterT, 'number', 'decimal')
       + '</div></section>';
 
     var lb = state.meta.lastBackup;
@@ -450,6 +736,11 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
       + (restoreMsg ? '<p class="note">' + esc(restoreMsg) + '</p>' : '')
       + '</section>';
     return html;
+  }
+  function settingField(id, label, field, val, type, mode) {
+    return '<label class="field" for="' + id + '">' + esc(label)
+      + '<input id="' + id + '" type="' + type + '"' + (mode ? ' inputmode="' + mode + '"' : '') + (type === 'number' ? ' min="0" step="any"' : '')
+      + ' data-setting="' + field + '" data-type="' + (type === 'time' ? 'time' : 'num') + '" value="' + esc(val) + '"></label>';
   }
 
   function render() {
@@ -475,21 +766,28 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
     lines.push('Focus week: ' + fmtShort(ws) + ' to ' + fmtShort(addDays(ws, 6)) + (ws === EXAM_WEEK ? ' (exam week, reduced targets)' : ''));
     INDS.forEach(function (ind) {
       lines.push('- ' + ind.title + ': ' + weekCount(ind, ws) + ' of ' + targetFor(ind, ws) + ' days (' + STATUS_LABEL[weekStatus(ind, ws)] + ')');
+      ind.stats(ws).forEach(function (l) { lines.push('    ' + l); });
+    });
+    lines.push('Maintenance (target ' + MAINT_TARGET + ' of 7):');
+    MAINT.forEach(function (m) {
+      var c = dates.filter(function (x) { return m.done(state.days[x]); }).length;
+      var extra = m.stats ? m.stats(ws) : '';
+      lines.push('- ' + m.title + ': ' + c + ' of 7' + (extra ? ' (' + extra + ')' : ''));
     });
     var wk = state.weeks[ws] || {};
-    lines.push('Sunday review: ' + (wk.review ? 'done' : 'not done') + '; water: ' + (wk.water ? 'yes' : 'no') + '; supplements: ' + (wk.supps ? 'yes' : 'no'));
+    lines.push('Sunday review: ' + (wk.review ? 'done' : 'not done'));
     var mo = state.months[monthKey(ws)] || {};
     if (mo.saved || mo.pct) lines.push('Savings this month: ' + (mo.saved ? '$' + mo.saved : 'n/a') + (mo.pct ? ', ' + mo.pct + '% of income' : ''));
     if (wk.felt) lines.push('How the week felt: ' + wk.felt);
-    var notes = dates.filter(function (d) { return state.days[d] && state.days[d].note; });
+    var notes = dates.filter(function (x) { return state.days[x] && state.days[x].note; });
     if (notes.length) {
       lines.push('Notes:');
-      notes.forEach(function (d) { lines.push('  ' + weekdayName(d).slice(0, 3) + ' ' + fmtShort(d) + ': ' + state.days[d].note); });
+      notes.forEach(function (x) { lines.push('  ' + weekdayName(x).slice(0, 3) + ' ' + fmtShort(x) + ': ' + state.days[x].note); });
     }
     return lines.join('\n');
   }
   function backupText() {
-    return 'FOCUS-TRACKER-BACKUP\n' + JSON.stringify({ days: state.days, weeks: state.weeks, months: state.months }, null, 1);
+    return 'FOCUS-TRACKER-BACKUP\n' + JSON.stringify({ days: state.days, weeks: state.weeks, months: state.months, settings: state.settings }, null, 1);
   }
   async function copyText(text, isBackup) {
     try {
@@ -524,6 +822,9 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
         }
       });
     });
+    if (data.settings && typeof data.settings === 'object' && (data.settings.updated || 0) > ((state.settings && state.settings.updated) || 0)) {
+      state.settings = data.settings;
+    }
     saveLocal();
     restoreText = '';
     restoreMsg = 'Restored ' + n + ' entries.';
@@ -537,10 +838,23 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
     var b = e.target.closest('[data-act]');
     if (!b) return;
     var act = b.getAttribute('data-act');
+    var cur;
     if (act === 'chip') {
       var k = b.getAttribute('data-k');
-      var cur = state.days[selDate] || {};
-      setField('days', selDate, k, !cur[k]);
+      cur = state.days[selDate] || {};
+      var o = {};
+      o[k] = !cur[k];
+      if (k === 'amSun' && o[k]) o.amNoSun = false;
+      if (k === 'amNoSun' && o[k]) o.amSun = false;
+      setFields('days', selDate, o);
+    } else if (act === 'choice') {
+      var ck = b.getAttribute('data-k'), cv = b.getAttribute('data-v');
+      cur = state.days[selDate] || {};
+      setField('days', selDate, ck, cur[ck] === cv ? '' : cv);
+    } else if (act === 'score') {
+      var sv = Number(b.getAttribute('data-v'));
+      cur = state.days[selDate] || {};
+      setField('days', selDate, 'tongueScore', num(cur.tongueScore) === sv ? null : sv);
     } else if (act === 'wtoggle') {
       var k2 = b.getAttribute('data-k');
       var w = state.weeks[selWeek] || {};
@@ -564,10 +878,18 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875r
     var t = e.target;
     if (!t.getAttribute) return;
     if (t.id === 'restore') { restoreText = t.value; return; }
+    var type = t.getAttribute('data-type');
+    var setting = t.getAttribute('data-setting');
+    if (setting) {
+      var sv = type === 'time' ? (t.value || null) : num(t.value);
+      if (sv !== null) { setSetting(setting, sv); dirty = true; }
+      return;
+    }
     var f = t.getAttribute('data-field');
     if (!f) return;
+    var value = type === 'num' ? num(t.value) : type === 'time' ? (t.value || null) : t.value;
     dirty = true;
-    setField(t.getAttribute('data-kind'), t.getAttribute('data-id'), f, t.value, true);
+    setField(t.getAttribute('data-kind'), t.getAttribute('data-id'), f, value, true);
   });
   function route() {
     view = location.hash === '#week' ? 'week' : 'today';
